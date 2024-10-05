@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book Library</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            position: relative;
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        form {
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 20px;
+        }
+
+        form input,
+        form select {
+            padding: 10px;
+            margin-bottom: 10px;
+            width: 100%;
+            box-sizing: border-box;
+            height: 40px;
+        }
+
+        ul {
+            list-style: none;
+            padding: 0;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        ul li {
+            background: #e2e2e2;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .edit-button, .delete-button, .borrow-button, .return-button {
+            background: #007BFF;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            cursor: pointer;
+            margin-left: 5px;
+        }
+
+        .delete-button {
+            background: #DC3545;
+        }
+
+        .borrow-button {
+            background: #28a745;
+        }
+
+        .return-button {
+            background: #ffc107;
+        }
+
+        .suggestions {
+            background: white;
+            border: 1px solid #ccc;
+            position: absolute;
+            z-index: 1000;
+            width: calc(100% - 22px);
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .suggestion-item {
+            padding: 10px;
+            cursor: pointer;
+        }
+
+        .suggestion-item:hover {
+            background: #e2e2e2;
+        }
+
+        .count {
+            text-align: center;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>My Book Library</h1>
+        <form id="book-form">
+            <input type="text" id="title" placeholder="Book Title" required oninput="showTitleSuggestions(this.value)">
+            <div id="title-suggestions" class="suggestions"></div>
+            <input type="text" id="author" placeholder="Author" required oninput="showAuthorSuggestions(this.value)">
+            <div id="author-suggestions" class="suggestions"></div>
+            <select id="category">
+                <option value="">Select Category</option>
+                <option value="Fiction">Fiction</option>
+                <option value="Non-Fiction">Non-Fiction</option>
+                <option value="Science">Science</option>
+                <option value="Fantasy">Fantasy</option>
+                <option value="Mystery">Mystery</option>
+                <option value="Biography">Biography</option>
+                <option value="History">History</option>
+                <option value="Romance">Romance</option>
+                <option value="Self-Help">Self-Help</option>
+                <option value="Children">Children</option>
+            </select>
+            <button type="submit">Add Book</button>
+        </form>
+
+        <!-- Rating input will be here for returning books -->
+        <input type="number" id="return-rating" placeholder="Rating (1-5)" min="1" max="5" style="display: none;">
+
+        <ul id="book-list"></ul>
+        <div class="count" id="book-count"></div>
+        <button id="download" onclick="downloadBooks()">Download Books</button>
+        <input type="file" id="upload" accept=".json" onchange="uploadBooks(event)">
+    </div>
+    <script>
+        const bookForm = document.getElementById('book-form');
+        const bookList = document.getElementById('book-list');
+        const bookCount = document.getElementById('book-count');
+        const titleSuggestionsContainer = document.getElementById('title-suggestions');
+        const authorSuggestionsContainer = document.getElementById('author-suggestions');
+        const returnRatingInput = document.getElementById('return-rating');
+
+        const bookTitles = [
+            "To Kill a Mockingbird", "1984", "Moby Dick", "Pride and Prejudice",
+            "The Great Gatsby", "The Catcher in the Rye", "Brave New World",
+            "Fahrenheit 451", "The Hobbit", "War and Peace",
+            "The Lord of the Rings", "The Alchemist", "The Da Vinci Code",
+            "The Picture of Dorian Gray", "Jane Eyre", "Wuthering Heights",
+            "The Chronicles of Narnia", "The Kite Runner", "The Book Thief",
+            "Little Women", "The Grapes of Wrath",
+            // Additional non-fiction titles
+            "Sapiens: A Brief History of Humankind", "Educated", "The Immortal Life of Henrietta Lacks",
+            "Becoming", "The Wright Brothers", "The Glass Castle", "The Power of Habit", 
+            "Thinking, Fast and Slow", "The Body Keeps the Score", "Outliers"
+        ];
+
+        const authorNames = [
+            "Harper Lee", "George Orwell", "Herman Melville", "Jane Austen",
+            "F. Scott Fitzgerald", "J.D. Salinger", "Aldous Huxley",
+            "Ray Bradbury", "J.R.R. Tolkien", "Leo Tolstoy",
+            "Paulo Coelho", "Dan Brown", "J.K. Rowling",
+            "Oscar Wilde", "Charlotte Brontë", "Emily Brontë",
+            "Khaled Hosseini", "Mark Twain", "Ernest Hemingway",
+            "John Steinbeck", "Agatha Christie",
+            // Additional non-fiction authors
+            "Yuval Noah Harari", "Tara Westover", "Rebecca Skloot", 
+            "Michelle Obama", "David McCullough", "Jeannette Walls", 
+            "Charles Duhigg", "Daniel Kahneman", "Bessel van der Kolk", "Malcolm Gladwell"
+        ];
+
+        let books = JSON.parse(localStorage.getItem('books')) || [];
+
+        bookForm.addEventListener('submit', function (event) {
+            event.preventDefault();
+            const title = document.getElementById('title').value.trim();
+            const author = document.getElementById('author').value.trim();
+            const category = document.getElementById('category').value.trim();
+
+            if (books.some(book => book.title.toLowerCase() === title.toLowerCase())) {
+                alert('This book already exists in your library.');
+                return;
+            }
+
+            const book = { title, author, category, rating: null, borrowed: false, borrowHistory: [] };
+            books.push(book);
+            localStorage.setItem('books', JSON.stringify(books));
+            renderBooks(books);
+            bookForm.reset();
+            titleSuggestionsContainer.innerHTML = '';
+            authorSuggestionsContainer.innerHTML = '';
+        });
+
+        function renderBooks(booksToRender) {
+            bookList.innerHTML = '';
+            booksToRender.forEach((book, index) => {
+                const li = document.createElement('li');
+                li.textContent = `${book.title} by ${book.author} (${book.category})${book.rating ? ` - Rating: ${book.rating}` : ''}${book.borrowed ? ' (Borrowed)' : ''}`;
+
+                const borrowButton = document.createElement('button');
+                borrowButton.textContent = book.borrowed ? 'Return' : 'Borrow';
+                borrowButton.className = book.borrowed ? 'return-button' : 'borrow-button';
+                borrowButton.onclick = () => toggleBorrow(index);
+
+                const editButton = document.createElement('button');
+                editButton.textContent = 'Edit';
+                editButton.className = 'edit-button';
+                editButton.onclick = () => editBook(index);
+
+                const deleteButton = document.createElement('button');
+                deleteButton.textContent = 'Delete';
+                deleteButton.className = 'delete-button';
+                deleteButton.onclick = () => deleteBook(index);
+
+                li.appendChild(borrowButton);
+                li.appendChild(editButton);
+                li.appendChild(deleteButton);
+                bookList.appendChild(li);
+            });
+            updateBookCount();
+        }
+
+        function toggleBorrow(index) {
+            const book = books[index];
+            if (!book.borrowed) {
+                const borrower = prompt("Enter borrower's name:");
+                if (borrower) {
+                    const returnDate = prompt("Enter return date (YYYY-MM-DD):");
+                    if (returnDate) {
+                        book.borrowed = true;
+                        book.borrowHistory.push({ date: new Date().toLocaleString(), borrower, returnDate });
+                    }
+                }
+            } else {
+                const rating = prompt(`Enter rating for "${book.title}" (1-5):`);
+                if (rating >= 1 && rating <= 5) {
+                    book.rating = parseInt(rating);
+                }
+                alert(`"${book.title}" has been returned successfully.`);
+                // Remove the book from the array after return
+                books.splice(index, 1);
+            }
+            localStorage.setItem('books', JSON.stringify(books));
+            renderBooks(books);
+        }
+
+        function deleteBook(index) {
+            books.splice(index, 1);
+            localStorage.setItem('books', JSON.stringify(books));
+            renderBooks(books);
+        }
+
+        function editBook(index) {
+            const book = books[index];
+            const newTitle = prompt("Enter new title:", book.title);
+            const newAuthor = prompt("Enter new author:", book.author);
+            const newCategory = prompt("Enter new category:", book.category);
+            const newRating = prompt("Enter new rating (1-5):", book.rating || '');
+
+            if (newTitle !== null && newAuthor !== null) {
+                book.title = newTitle || book.title;
+                book.author = newAuthor || book.author;
+                book.category = newCategory || book.category;
+                book.rating = (newRating && !isNaN(newRating) && newRating >= 1 && newRating <= 5) ? parseInt(newRating) : book.rating;
+                localStorage.setItem('books', JSON.stringify(books));
+                renderBooks(books);
+            }
+        }
+
+        function updateBookCount() {
+            bookCount.textContent = `Total Books: ${books.length}`;
+        }
+
+        function downloadBooks() {
+            const blob = new Blob([JSON.stringify(books)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'books.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function uploadBooks(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const uploadedBooks = JSON.parse(e.target.result);
+                        books = uploadedBooks;
+                        localStorage.setItem('books', JSON.stringify(books));
+                        renderBooks(books);
+                    } catch (error) {
+                        alert('Invalid file format. Please upload a valid JSON file.');
+                    }
+                };
+                reader.readAsText(file);
+            }
+        }
+
+        function showTitleSuggestions(query) {
+            titleSuggestionsContainer.innerHTML = '';
+            if (query) {
+                const suggestions = bookTitles
+                    .filter(title => title.toLowerCase().startsWith(query.toLowerCase()));
+                suggestions.forEach(title => {
+                    const div = document.createElement('div');
+                    div.textContent = title;
+                    div.className = 'suggestion-item';
+                    div.onclick = () => {
+                        document.getElementById('title').value = title;
+                        titleSuggestionsContainer.innerHTML = '';
+                    };
+                    titleSuggestionsContainer.appendChild(div);
+                });
+            }
+        }
+
+        function showAuthorSuggestions(query) {
+            authorSuggestionsContainer.innerHTML = '';
+            if (query) {
+                const suggestions = authorNames
+                    .filter(author => author.toLowerCase().startsWith(query.toLowerCase()));
+                suggestions.forEach(author => {
+                    const div = document.createElement('div');
+                    div.textContent = author;
+                    div.className = 'suggestion-item';
+                    div.onclick = () => {
+                        document.getElementById('author').value = author;
+                        authorSuggestionsContainer.innerHTML = '';
+                    };
+                    authorSuggestionsContainer.appendChild(div);
+                });
+            }
+        }
+
+        // Initial render
+        renderBooks(books);
+    </script>
+</body>
+</html>
